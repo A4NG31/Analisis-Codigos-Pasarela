@@ -1,8 +1,6 @@
 import streamlit as st
 import pandas as pd
 import io
-import plotly.express as px
-import plotly.graph_objects as go
 
 # Configuración de la página
 st.set_page_config(
@@ -42,13 +40,10 @@ def procesar_archivo(df_completo, codigos_seleccionados):
             index='OverallReasonCode',
             aggfunc='count'
         ).reset_index()
+        pivot_data.columns = ['OverallReasonCode', 'Count']
     else:
         # Si no existe RequestID, usar el índice para contar filas
         pivot_data = df_completo.groupby('OverallReasonCode').size().reset_index()
-        pivot_data.columns = ['OverallReasonCode', 'Count']
-    
-    # Asegurar que las columnas tengan los nombres correctos
-    if 'RequestID' in pivot_data.columns:
         pivot_data.columns = ['OverallReasonCode', 'Count']
     
     pivot_data['Percentage'] = (pivot_data['Count'] / pivot_data['Count'].sum()) * 100
@@ -137,29 +132,11 @@ def crear_excel_descarga(resultados, codigos_seleccionados):
         
     except Exception as e:
         st.error(f"Error al crear archivo Excel: {str(e)}")
-        
-        # Fallback: crear archivo básico sin formato
-        try:
-            basic_output = io.BytesIO()
-            with pd.ExcelWriter(basic_output, engine='xlsxwriter') as writer:
-                resultados['datos_completos'].to_excel(writer, sheet_name='Datos_Completos', index=False)
-                for codigo in codigos_seleccionados:
-                    if f'codigo_{codigo}' in resultados:
-                        sheet_name = f'Codigo_{codigo}'
-                        resultados[f'codigo_{codigo}'].to_excel(writer, sheet_name=sheet_name, index=False)
-                resultados['pivot_table'].to_excel(writer, sheet_name='Resumen_Pivot', index=False)
-            
-            basic_output.seek(0)
-            st.warning("⚠️ El archivo se descargará con formato básico debido a un error")
-            return basic_output.getvalue()
-            
-        except Exception as e2:
-            st.error(f"Error crítico al crear archivo Excel: {str(e2)}")
-            return None
+        return None
 
-def crear_graficos(pivot_data):
+def crear_visualizaciones(pivot_data):
     """
-    Crea gráficos para visualizar los datos usando Streamlit nativo
+    Crea visualizaciones usando componentes nativos de Streamlit
     """
     # Filtrar datos sin el total
     data_sin_total = pivot_data[pivot_data['OverallReasonCode'] != 'Total'].copy()
@@ -168,21 +145,20 @@ def crear_graficos(pivot_data):
         col1, col2 = st.columns(2)
         
         with col1:
-            st.subheader("📊 Distribución por Código (Barras)")
-            st.bar_chart(
-                data_sin_total.set_index('OverallReasonCode')['Count'],
-                height=400
-            )
+            st.subheader("📊 Distribución por Código")
+            # Crear gráfico de barras nativo
+            chart_data = data_sin_total.set_index('OverallReasonCode')['Count']
+            st.bar_chart(chart_data, height=400)
         
         with col2:
-            st.subheader("📈 Datos Tabulares")
-            # Mostrar tabla con colores
-            st.dataframe(
-                data_sin_total[['OverallReasonCode', 'Count', 'Percentage']].style.format({
-                    'Percentage': '{:.2f}%'
-                }),
-                use_container_width=True
-            )
+            st.subheader("📈 Detalles por Código")
+            # Mostrar métricas individuales
+            for _, row in data_sin_total.iterrows():
+                st.metric(
+                    label=f"Código {row['OverallReasonCode']}",
+                    value=f"{row['Count']} registros",
+                    delta=f"{row['Percentage']:.1f}%"
+                )
     else:
         st.warning("No hay datos para mostrar en gráficos")
 
@@ -215,7 +191,7 @@ def main():
         # Opciones adicionales
         st.subheader("📋 Opciones")
         saltar_primera_fila = st.checkbox("Saltar primera fila", value=True)
-        mostrar_graficos = st.checkbox("Mostrar gráficos", value=True)
+        mostrar_visualizaciones = st.checkbox("Mostrar visualizaciones", value=True)
     
     # Contenido principal
     if uploaded_file is not None:
@@ -277,10 +253,10 @@ def main():
                         hide_index=True
                     )
                     
-                    # Gráficos
-                    if mostrar_graficos:
+                    # Visualizaciones
+                    if mostrar_visualizaciones:
                         st.subheader("📈 Visualizaciones")
-                        crear_graficos(resultados['pivot_table'])
+                        crear_visualizaciones(resultados['pivot_table'])
                     
                     # Botón de descarga
                     st.subheader("💾 Descargar Análisis")
@@ -296,17 +272,17 @@ def main():
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                             help="Descarga el archivo Excel con todas las hojas: datos completos, códigos filtrados y tabla dinámica"
                         )
+                        
+                        # Información adicional
+                        with st.expander("ℹ️ Información del Archivo Excel"):
+                            st.write("**El archivo Excel contiene las siguientes hojas:**")
+                            st.write("- 📋 **Datos_Completos:** Todos los datos originales")
+                            for codigo in codigos_seleccionados:
+                                cantidad = len(resultados[f'codigo_{codigo}']) if f'codigo_{codigo}' in resultados else 0
+                                st.write(f"- 🔍 **Codigo_{codigo}:** {cantidad} registros filtrados")
+                            st.write("- 📊 **Resumen_Pivot:** Tabla dinámica con formato y colores")
                     else:
                         st.error("❌ No se pudo generar el archivo Excel para descarga")
-                    
-                    # Información adicional
-                    with st.expander("ℹ️ Información del Archivo Excel"):
-                        st.write("**El archivo Excel contiene las siguientes hojas:**")
-                        st.write("- 📋 **Datos_Completos:** Todos los datos originales")
-                        for codigo in codigos_seleccionados:
-                            cantidad = len(resultados[f'codigo_{codigo}']) if f'codigo_{codigo}' in resultados else 0
-                            st.write(f"- 🔍 **Codigo_{codigo}:** {cantidad} registros filtrados")
-                        st.write("- 📊 **Resumen_Pivot:** Tabla dinámica con formato y colores")
             else:
                 st.warning("⚠️ Selecciona al menos un código para procesar")
                 
@@ -325,7 +301,7 @@ def main():
         - 📁 **Carga de archivos:** Sube tu archivo CSV directamente
         - 🔍 **Filtrado personalizado:** Selecciona los códigos específicos que deseas analizar
         - 📊 **Tabla dinámica:** Visualiza un resumen completo con conteos y porcentajes
-        - 📈 **Gráficos interactivos:** Visualizaciones en barras y torta
+        - 📈 **Visualizaciones:** Gráficos de barras y métricas individuales
         - 💾 **Descarga Excel:** Obtén un archivo completo con formato profesional
         
         ### 📋 Códigos disponibles:
@@ -334,7 +310,7 @@ def main():
         ### 🛠️ Para comenzar:
         1. Carga tu archivo CSV en la barra lateral
         2. Selecciona los códigos que deseas analizar
-        3. Revisa los resultados y gráficos
+        3. Revisa los resultados y visualizaciones
         4. Descarga el análisis completo en Excel
         
         ---
