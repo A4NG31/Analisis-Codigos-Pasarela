@@ -279,13 +279,16 @@ def main():
                     with st.spinner("📦 Preparando archivo Excel..."):
                         excel_data = crear_excel_descarga(resultados, codigos_seleccionados)
                     
-                    st.download_button(
-                        label="📥 Descargar Análisis Completo (Excel)",
-                        data=excel_data,
-                        file_name=f"TRR_Monitoreo_Analysis_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        help="Descarga el archivo Excel con todas las hojas: datos completos, códigos filtrados y tabla dinámica"
-                    )
+                    if excel_data is not None:
+                        st.download_button(
+                            label="📥 Descargar Análisis Completo (Excel)",
+                            data=excel_data,
+                            file_name=f"TRR_Monitoreo_Analysis_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            help="Descarga el archivo Excel con todas las hojas: datos completos, códigos filtrados y tabla dinámica"
+                        )
+                    else:
+                        st.error("❌ No se pudo generar el archivo Excel para descarga")
                     
                     # Información adicional
                     with st.expander("ℹ️ Información del Archivo Excel"):
