@@ -159,35 +159,32 @@ def crear_excel_descarga(resultados, codigos_seleccionados):
 
 def crear_graficos(pivot_data):
     """
-    Crea gráficos para visualizar los datos
+    Crea gráficos para visualizar los datos usando Streamlit nativo
     """
     # Filtrar datos sin el total
     data_sin_total = pivot_data[pivot_data['OverallReasonCode'] != 'Total'].copy()
     
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("📊 Distribución por Código (Barras)")
-        fig_bar = px.bar(
-            data_sin_total, 
-            x='OverallReasonCode', 
-            y='Count',
-            title='Cantidad de Registros por Código',
-            color='Count',
-            color_continuous_scale='Viridis'
-        )
-        fig_bar.update_layout(xaxis_title="Código", yaxis_title="Cantidad")
-        st.plotly_chart(fig_bar, use_container_width=True)
-    
-    with col2:
-        st.subheader("🥧 Distribución Porcentual (Torta)")
-        fig_pie = px.pie(
-            data_sin_total, 
-            values='Count', 
-            names='OverallReasonCode',
-            title='Distribución Porcentual por Código'
-        )
-        st.plotly_chart(fig_pie, use_container_width=True)
+    if len(data_sin_total) > 0:
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("📊 Distribución por Código (Barras)")
+            st.bar_chart(
+                data_sin_total.set_index('OverallReasonCode')['Count'],
+                height=400
+            )
+        
+        with col2:
+            st.subheader("📈 Datos Tabulares")
+            # Mostrar tabla con colores
+            st.dataframe(
+                data_sin_total[['OverallReasonCode', 'Count', 'Percentage']].style.format({
+                    'Percentage': '{:.2f}%'
+                }),
+                use_container_width=True
+            )
+    else:
+        st.warning("No hay datos para mostrar en gráficos")
 
 def main():
     # Título principal
