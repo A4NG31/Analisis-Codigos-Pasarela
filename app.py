@@ -64,75 +64,79 @@ def procesar_archivo(df_completo, codigos_seleccionados):
 def crear_excel_descarga(resultados, codigos_seleccionados):
     """
     Crea un archivo Excel en memoria para descargar usando xlsxwriter
+    (corrige la doble escritura de la hoja Resumen_Pivot).
     """
     output = io.BytesIO()
-    
+
     try:
-        # Crear el archivo Excel con xlsxwriter
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            # Escribir hoja de datos completos
-            resultados['datos_completos'].to_excel(writer, sheet_name='Datos_Completos', index=False)
-            
-            # Escribir hojas filtradas
+            # 1) Hojas de datos
+            resultados['datos_completos'].to_excel(
+                writer, sheet_name='Datos_Completos', index=False
+            )
             for codigo in codigos_seleccionados:
-                if f'codigo_{codigo}' in resultados:
-                    sheet_name = f'Codigo_{codigo}'
-                    resultados[f'codigo_{codigo}'].to_excel(writer, sheet_name=sheet_name, index=False)
-            
-            # Escribir tabla dinámica con formato
-            pivot_df = resultados['pivot_table']
-            pivot_df.to_excel(writer, sheet_name='Resumen_Pivot', index=False, startrow=1)
-            
-            # Obtener el workbook y worksheet para aplicar formato
+                key = f'codigo_{codigo}'
+                if key in resultados:
+                    resultados[key].to_excel(
+                        writer, sheet_name=f'Codigo_{codigo}', index=False
+                    )
+
+            # 2) Hoja de Resumen (escritura manual, sin to_excel)
+            pivot_df = resultados['pivot_table'].copy()
             workbook = writer.book
-            worksheet = writer.sheets['Resumen_Pivot']
-            
-            # Definir formatos
+            sheet_name = 'Resumen_Pivot'
+            worksheet = workbook.add_worksheet(sheet_name)
+            writer.sheets[sheet_name] = worksheet
+
+            # --- Formatos ---
             header_format = workbook.add_format({
-                'bold': True,
-                'text_wrap': True,
-                'valign': 'top',
-                'fg_color': '#00F214',
-                'border': 1,
-                'border_color': '#000000'
+                'bold': True, 'text_wrap': True, 'valign': 'top',
+                'fg_color': '#00F214', 'border': 1, 'border_color': '#000000'
             })
-            
-            data_format = workbook.add_format({
-                'border': 1,
-                'border_color': '#000000'
-            })
-            
+            data_text = workbook.add_format({'border': 1, 'border_color': '#000000'})
+            data_int  = workbook.add_format({'border': 1, 'border_color': '#000000',
+                                             'num_format': '#,##0'})
+            data_num2 = workbook.add_format({'border': 1, 'border_color': '#000000',
+                                             'num_format': '0.00'})
             total_format = workbook.add_format({
-                'bold': True,
-                'fg_color': '#00F214',
-                'border': 1,
-                'border_color': '#000000'
+                'bold': True, 'fg_color': '#00F214',
+                'border': 1, 'border_color': '#000000'
             })
-            
-            # Escribir y formatear encabezados
-            for col_num, value in enumerate(pivot_df.columns.values):
-                worksheet.write(0, col_num, value, header_format)
-            
-            # Escribir y formatear datos
-            for row_num in range(len(pivot_df)):
-                for col_num in range(len(pivot_df.columns)):
-                    cell_value = pivot_df.iloc[row_num, col_num]
-                    if pivot_df.iloc[row_num, 0] == 'Total':  # Fila de totales
-                        worksheet.write(row_num + 1, col_num, cell_value, total_format)
-                    else:
-                        worksheet.write(row_num + 1, col_num, cell_value, data_format)
-            
-            # Ajustar ancho de columnas
-            worksheet.set_column('A:A', 20)  # OverallReasonCode
-            worksheet.set_column('B:B', 15)  # Count
-            worksheet.set_column('C:C', 15)  # Percentage
-        
+
+            # --- Encabezados ---
+            for col_num, col_name in enumerate(pivot_df.columns):
+                worksheet.write(0, col_num, col_name, header_format)
+
+            # --- Datos ---
+            # Espera columnas: ['OverallReasonCode', 'Count', 'Percentage']
+            for r, (_, row) in enumerate(pivot_df.iterrows(), start=1):
+                if row['OverallReasonCode'] == 'Total':
+                    worksheet.write(r, 0, row['OverallReasonCode'], total_format)
+                    worksheet.write_number(r, 1, float(row['Count']), total_format)
+                    worksheet.write_number(r, 2, float(row['Percentage']), total_format)
+                else:
+                    worksheet.write(r, 0, row['OverallReasonCode'], data_text)
+                    # asegura numéricos
+                    cnt = int(row['Count']) if pd.notna(row['Count']) else 0
+                    pct = float(row['Percentage']) if pd.notna(row['Percentage']) else 0.0
+                    worksheet.write_number(r, 1, cnt, data_int)
+                    # Percentage en 0–100 (dos decimales)
+                    worksheet.write_number(r, 2, pct, data_num2)
+
+            # Ancho de columnas, filtro y panes
+            worksheet.set_column('A:A', 20)
+            worksheet.set_column('B:B', 15)
+            worksheet.set_column('C:C', 15)
+            worksheet.autofilter(0, 0, len(pivot_df), len(pivot_df.columns) - 1)
+            worksheet.freeze_panes(1, 0)
+
         output.seek(0)
         return output.getvalue()
-        
+
     except Exception as e:
         st.error(f"Error al crear archivo Excel: {str(e)}")
         return None
+
 
 def crear_visualizaciones(pivot_data):
     """
