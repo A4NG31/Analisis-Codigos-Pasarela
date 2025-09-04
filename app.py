@@ -1,9 +1,6 @@
 import streamlit as st
 import pandas as pd
 import io
-from pathlib import Path
-from openpyxl import load_workbook
-from openpyxl.styles import PatternFill, Border, Side
 import plotly.express as px
 import plotly.graph_objects as go
 
@@ -17,52 +14,6 @@ st.set_page_config(
 
 # Códigos disponibles
 CODIGOS_DISPONIBLES = [100, 102, 150, 151, 202, 203, 204, 205, 208, 210, 211, 231, 233, 244, 246, 251, 481]
-
-def aplicar_colores_y_bordes_tabla(workbook, sheet_name='Resumen_Pivot'):
-    """Aplica colores y bordes negros a la tabla"""
-    try:
-        ws = workbook[sheet_name]
-        
-        # Definir colores
-        verde_claro = PatternFill(start_color='FFFFFF', end_color='FFFFFF', fill_type='solid')
-        verde_oscuro = PatternFill(start_color='00F214', end_color='00F214', fill_type='solid')
-        
-        # Definir borde negro fino
-        borde_negro = Border(
-            left=Side(style='thin', color='000000'),
-            right=Side(style='thin', color='000000'),
-            top=Side(style='thin', color='000000'),
-            bottom=Side(style='thin', color='000000')
-        )
-        
-        # Obtener dimensiones de la tabla
-        max_row = ws.max_row
-        max_col = ws.max_column
-        
-        # 1. Aplicar a encabezados (fila 1) - verde oscuro + borde negro
-        for col in range(1, max_col + 1):
-            celda = ws.cell(row=1, column=col)
-            celda.fill = verde_oscuro
-            celda.border = borde_negro
-        
-        # 2. Aplicar a datos (filas 2 hasta penúltima) - verde claro + borde negro
-        for row in range(2, max_row):
-            for col in range(1, max_col + 1):
-                celda = ws.cell(row=row, column=col)
-                celda.fill = verde_claro
-                celda.border = borde_negro
-        
-        # 3. Aplicar a fila de totales (última fila) - verde oscuro + borde negro
-        for col in range(1, max_col + 1):
-            celda = ws.cell(row=max_row, column=col)
-            celda.fill = verde_oscuro
-            celda.border = borde_negro
-        
-        return True
-        
-    except Exception as e:
-        st.error(f"Error al aplicar colores y bordes: {str(e)}")
-        return False
 
 def procesar_archivo(df_completo, codigos_seleccionados):
     """
@@ -117,33 +68,94 @@ def procesar_archivo(df_completo, codigos_seleccionados):
 
 def crear_excel_descarga(resultados, codigos_seleccionados):
     """
-    Crea un archivo Excel en memoria para descargar
+    Crea un archivo Excel en memoria para descargar usando xlsxwriter
     """
     output = io.BytesIO()
     
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        # Escribir hoja de datos completos
-        resultados['datos_completos'].to_excel(writer, sheet_name='Datos_Completos', index=False)
+    try:
+        # Crear el archivo Excel con xlsxwriter
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            # Escribir hoja de datos completos
+            resultados['datos_completos'].to_excel(writer, sheet_name='Datos_Completos', index=False)
+            
+            # Escribir hojas filtradas
+            for codigo in codigos_seleccionados:
+                if f'codigo_{codigo}' in resultados:
+                    sheet_name = f'Codigo_{codigo}'
+                    resultados[f'codigo_{codigo}'].to_excel(writer, sheet_name=sheet_name, index=False)
+            
+            # Escribir tabla dinámica con formato
+            pivot_df = resultados['pivot_table']
+            pivot_df.to_excel(writer, sheet_name='Resumen_Pivot', index=False, startrow=1)
+            
+            # Obtener el workbook y worksheet para aplicar formato
+            workbook = writer.book
+            worksheet = writer.sheets['Resumen_Pivot']
+            
+            # Definir formatos
+            header_format = workbook.add_format({
+                'bold': True,
+                'text_wrap': True,
+                'valign': 'top',
+                'fg_color': '#00F214',
+                'border': 1,
+                'border_color': '#000000'
+            })
+            
+            data_format = workbook.add_format({
+                'border': 1,
+                'border_color': '#000000'
+            })
+            
+            total_format = workbook.add_format({
+                'bold': True,
+                'fg_color': '#00F214',
+                'border': 1,
+                'border_color': '#000000'
+            })
+            
+            # Escribir y formatear encabezados
+            for col_num, value in enumerate(pivot_df.columns.values):
+                worksheet.write(0, col_num, value, header_format)
+            
+            # Escribir y formatear datos
+            for row_num in range(len(pivot_df)):
+                for col_num in range(len(pivot_df.columns)):
+                    cell_value = pivot_df.iloc[row_num, col_num]
+                    if pivot_df.iloc[row_num, 0] == 'Total':  # Fila de totales
+                        worksheet.write(row_num + 1, col_num, cell_value, total_format)
+                    else:
+                        worksheet.write(row_num + 1, col_num, cell_value, data_format)
+            
+            # Ajustar ancho de columnas
+            worksheet.set_column('A:A', 20)  # OverallReasonCode
+            worksheet.set_column('B:B', 15)  # Count
+            worksheet.set_column('C:C', 15)  # Percentage
         
-        # Escribir hojas filtradas
-        for codigo in codigos_seleccionados:
-            if f'codigo_{codigo}' in resultados:
-                sheet_name = f'Codigo_{codigo}'
-                resultados[f'codigo_{codigo}'].to_excel(writer, sheet_name=sheet_name, index=False)
+        output.seek(0)
+        return output.getvalue()
         
-        # Escribir tabla dinámica
-        resultados['pivot_table'].to_excel(writer, sheet_name='Resumen_Pivot', index=False)
-    
-    # Aplicar formato a la tabla dinámica
-    workbook = load_workbook(output)
-    aplicar_colores_y_bordes_tabla(workbook, 'Resumen_Pivot')
-    
-    # Guardar en nuevo buffer
-    formatted_output = io.BytesIO()
-    workbook.save(formatted_output)
-    formatted_output.seek(0)
-    
-    return formatted_output.getvalue()
+    except Exception as e:
+        st.error(f"Error al crear archivo Excel: {str(e)}")
+        
+        # Fallback: crear archivo básico sin formato
+        try:
+            basic_output = io.BytesIO()
+            with pd.ExcelWriter(basic_output, engine='xlsxwriter') as writer:
+                resultados['datos_completos'].to_excel(writer, sheet_name='Datos_Completos', index=False)
+                for codigo in codigos_seleccionados:
+                    if f'codigo_{codigo}' in resultados:
+                        sheet_name = f'Codigo_{codigo}'
+                        resultados[f'codigo_{codigo}'].to_excel(writer, sheet_name=sheet_name, index=False)
+                resultados['pivot_table'].to_excel(writer, sheet_name='Resumen_Pivot', index=False)
+            
+            basic_output.seek(0)
+            st.warning("⚠️ El archivo se descargará con formato básico debido a un error")
+            return basic_output.getvalue()
+            
+        except Exception as e2:
+            st.error(f"Error crítico al crear archivo Excel: {str(e2)}")
+            return None
 
 def crear_graficos(pivot_data):
     """
