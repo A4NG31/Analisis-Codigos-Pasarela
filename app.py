@@ -15,51 +15,48 @@ CODIGOS_DISPONIBLES = [100, 102, 150, 151, 202, 203, 204, 205, 208, 210, 211, 23
 
 def procesar_archivo(df_completo, codigos_seleccionados):
     """
-    Procesa el DataFrame según los códigos seleccionados
+    Procesa DataFrame normalizando OverallReasonCode (quita .0 y espacios)
+    y crea hojas filtradas + pivot consistente.
     """
     resultados = {}
-    
-    # Hoja 1: Datos sin filtrar
-    resultados['datos_completos'] = df_completo.copy()
-    
-    # Crear hojas filtradas para cada código seleccionado
-    if 'OverallReasonCode' in df_completo.columns:
-        for codigo in codigos_seleccionados:
-            # Convertir ambos a string para comparación más robusta
-            mask = (df_completo['OverallReasonCode'].astype(str) == str(codigo))
-            df_filtrado = df_completo[mask].copy()
-            resultados[f'codigo_{codigo}'] = df_filtrado
-    else:
+    datos_copy = df_completo.copy()
+    resultados['datos_completos'] = datos_copy.copy()
+
+    if 'OverallReasonCode' not in datos_copy.columns:
         st.error("❌ No se encontró la columna 'OverallReasonCode' en el archivo")
         return None
-    
-    # Crear tabla dinámica - verificar que existe RequestID
-    if 'RequestID' in df_completo.columns:
-        pivot_data = df_completo.pivot_table(
-            values='RequestID',
-            index='OverallReasonCode',
-            aggfunc='count'
-        ).reset_index()
+
+    # Normalizar: "481.0" -> "481", remove spaces
+    df_proc = datos_copy.copy()
+    df_proc['_orc_norm'] = df_proc['OverallReasonCode'].astype(str).str.strip().replace(r'\.0+$', '', regex=True)
+
+    # Hojas filtradas (sin la columna auxiliar)
+    for codigo in codigos_seleccionados:
+        mask = df_proc['_orc_norm'] == str(codigo)
+        resultados[f'codigo_{codigo}'] = df_proc[mask].drop(columns=['_orc_norm']).copy()
+
+    # Pivot usando la columna normalizada
+    if 'RequestID' in df_proc.columns:
+        pivot_data = df_proc.groupby('_orc_norm')['RequestID'].count().reset_index()
         pivot_data.columns = ['OverallReasonCode', 'Count']
     else:
-        # Si no existe RequestID, usar el índice para contar filas
-        pivot_data = df_completo.groupby('OverallReasonCode').size().reset_index()
+        pivot_data = df_proc.groupby('_orc_norm').size().reset_index()
         pivot_data.columns = ['OverallReasonCode', 'Count']
-    
+
+    pivot_data['Count'] = pivot_data['Count'].astype(int)
     pivot_data['Percentage'] = (pivot_data['Count'] / pivot_data['Count'].sum()) * 100
     pivot_data['Percentage'] = pivot_data['Percentage'].round(2)
-    
-    # Agregar fila de totales
+
     total_row = pd.DataFrame({
         'OverallReasonCode': ['Total'],
         'Count': [pivot_data['Count'].sum()],
         'Percentage': [100.00]
     })
     pivot_data = pd.concat([pivot_data, total_row], ignore_index=True)
-    
+
     resultados['pivot_table'] = pivot_data
-    
     return resultados
+
 
 def crear_excel_descarga(resultados, codigos_seleccionados):
     """
