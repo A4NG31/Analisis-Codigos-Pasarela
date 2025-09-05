@@ -134,7 +134,6 @@ def crear_excel_descarga(resultados, codigos_seleccionados):
         st.error(f"Error al crear archivo Excel: {str(e)}")
         return None
 
-
 def crear_visualizaciones(pivot_data):
     """
     Crea visualizaciones usando componentes nativos de Streamlit
@@ -143,23 +142,45 @@ def crear_visualizaciones(pivot_data):
     data_sin_total = pivot_data[pivot_data['OverallReasonCode'] != 'Total'].copy()
     
     if len(data_sin_total) > 0:
-        col1, col2 = st.columns(2)
+        col1, col2 = st.columns([2, 3])
         
         with col1:
             st.subheader("📊 Distribución por Código")
-            # Crear gráfico de barras nativo
             chart_data = data_sin_total.set_index('OverallReasonCode')['Count']
             st.bar_chart(chart_data, height=400)
         
         with col2:
             st.subheader("📈 Detalles por Código")
-            # Mostrar métricas individuales
-            for _, row in data_sin_total.iterrows():
-                st.metric(
-                    label=f"Código {row['OverallReasonCode']}",
-                    value=f"{row['Count']} registros",
-                    delta=f"{row['Percentage']:.1f}%"
-                )
+            
+            # --- CSS para métricas más compactas ---
+            st.markdown("""
+            <style>
+            div[data-testid="stMetric"] {
+                padding: 5px 10px;
+                border: 1px solid #ddd;
+                border-radius: 10px;
+                background-color: #f9f9f9;
+                margin: 4px;
+            }
+            div[data-testid="stMetric"] > label {
+                font-size: 0.85rem !important;
+            }
+            div[data-testid="stMetric"] > div {
+                font-size: 1rem !important;
+                font-weight: 600 !important;
+            }
+            </style>
+            """, unsafe_allow_html=True)
+            
+            # Mostrar métricas en un grid de 3 columnas
+            cols = st.columns(3)
+            for i, (_, row) in enumerate(data_sin_total.iterrows()):
+                with cols[i % 3]:
+                    st.metric(
+                        label=f"Código {row['OverallReasonCode']}",
+                        value=f"{row['Count']}",
+                        delta=f"{row['Percentage']:.1f}%"
+                    )
     else:
         st.warning("No hay datos para mostrar en gráficos")
 
